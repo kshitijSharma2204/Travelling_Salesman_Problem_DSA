@@ -1,7 +1,8 @@
 import math
 import random
 import matplotlib.pyplot as plt
-from util import City, read_cities, write_cities_and_return_them, generate_cities, visualize_tsp, path_cost
+from matplotlib.animation import FuncAnimation, FFMpegWriter
+from utilities import City, read_cities, write_cities_and_return_them, generate_cities, visualize_tsp, path_cost
 
 
 class SimAnneal(object):
@@ -20,10 +21,10 @@ class SimAnneal(object):
         self.cur_cost = None
 
     def greedy_solution(self):
-        start_node = random.randint(0, self.num_cities)  # start from a random node
+        start_node = random.randint(0, self.num_cities - 1)  # start from a random node
         unvisited = self.cities[:]
         del unvisited[start_node]
-        route = [cities[start_node]]
+        route = [self.cities[start_node]]
         while len(unvisited):
             index, nearest_city = min(enumerate(unvisited), key=lambda item: item[1].distance(route[-1]))
             route.append(nearest_city)
@@ -74,5 +75,40 @@ if __name__ == "__main__":
     cities = read_cities(64)
     sa = SimAnneal(cities, stopping_iter=15000)
     sa.run()
-    sa.plot_learning()
+
+    # — build and save a two-pane animation of progress + route —
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig.suptitle('Simulated Annealing TSP Progress')
+
+    def animate(i):
+        # left: learning curve up to iteration i
+        ax1.clear()
+        ax1.plot(range(i+1), sa.progress[:i+1], 'g-')
+        ax1.set_xlim(0, len(sa.progress))
+        ax1.set_ylim(min(sa.progress), max(sa.progress))
+        ax1.set_title('Distance per Iteration')
+        ax1.set_xlabel('Iteration')
+        ax1.set_ylabel('Distance')
+
+        # right: best route (final) as static reference
+        route = sa.route
+        xs = [c.x for c in route] + [route[0].x]
+        ys = [c.y for c in route] + [route[0].y]
+        ax2.clear()
+        ax2.plot(xs, ys, 'g-')
+        ax2.plot(xs, ys, 'ro')
+        ax2.set_title('Best TSP Route')
+        return ax1, ax2
+
+    anim = FuncAnimation(fig, animate, frames=len(sa.progress), blit=False)
+    writer = FFMpegWriter(fps=10, metadata={'artist': 'Kshitij'}, bitrate=1800)
+    anim.save(
+        'sa_tsp_progress.mp4',
+        writer=writer,
+        progress_callback=lambda i, n: print(f"Rendering frame {i+1}/{n}", end='\r')
+    )
+    print("\nSaved animation to sa_tsp_progress.mp4")
+    plt.close(fig)
+
+    # optionally still output a static plot or visualization
     sa.visualize_routes()

@@ -1,10 +1,11 @@
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation, FFMpegWriter
 import numpy as np
 import pandas as pd
 import random
 import math, sys
 import random
-from util import City, read_cities, write_cities_and_return_them, generate_cities
+from utilities import City, read_cities, write_cities_and_return_them, generate_cities
 
 
 class Fitness:
@@ -66,7 +67,7 @@ class GeneticAlgorithm:
     def selection(self):
         selections = [self.ranked_population[i][0] for i in range(self.elites_num)]
         if self.roulette_selection:
-            df = pd.DataFrame(np.array(self.ranked_population), columns=["index", "fitness"])
+            df = pd.DataFrame(self.ranked_population, columns=["route","fitness"])
             self.average_path_cost = sum(1 / df.fitness) / len(df.fitness)
             df['cum_sum'] = df.fitness.cumsum()
             df['cum_perc'] = 100 * df.cum_sum / df.fitness.sum()
@@ -132,29 +133,33 @@ class GeneticAlgorithm:
                 print(self.best_distance())
 
     def plot(self):
-        print(self.best_distance())
-        fig = plt.figure(0)
-        plt.plot(self.progress, 'g')
-        fig.suptitle('genetic algorithm generations')
-        plt.ylabel('Distance')
-        plt.xlabel('Generation')
+        # prepare best-distance and route coords
+        best = self.best_distance()
+        x_list = [c.x for c in self.best_chromosome()] + [self.best_chromosome()[0].x]
+        y_list = [c.y for c in self.best_chromosome()] + [self.best_chromosome()[0].y]
 
-        x_list, y_list = [], []
-        for city in self.best_chromosome():
-            x_list.append(city.x)
-            y_list.append(city.y)
-        x_list.append(self.best_chromosome()[0].x)
-        y_list.append(self.best_chromosome()[0].y)
-        fig = plt.figure(1)
-        fig.clear()
-        fig.suptitle('genetic algorithm TSP')
-        plt.plot(x_list, y_list, 'ro')
-        plt.plot(x_list, y_list, 'g')
+        # on first call, create a single figure with 2 subplots
+        if not hasattr(self, 'fig'):
+            self.fig, (self.ax1, self.ax2) = plt.subplots(1, 2, figsize=(12, 5))
+            self.fig.suptitle('Genetic Algorithm Progress')
 
+        # left subplot: distance over generations
+        self.ax1.clear()
+        self.ax1.plot(self.progress, 'g-')
+        self.ax1.set_title('Distance per Generation')
+        self.ax1.set_xlabel('Generation')
+        self.ax1.set_ylabel('Distance')
+
+        # right subplot: current best TSP route
+        self.ax2.clear()
+        self.ax2.plot(x_list, y_list, 'g-')
+        self.ax2.plot(x_list, y_list, 'ro')
+        self.ax2.set_title('TSP Route')
+
+        # draw and pause for animation
         if self.plot_progress:
-            plt.draw()
+            self.fig.canvas.draw()
             plt.pause(0.05)
-        plt.show()
 
 
 def greedy_route(start_index, cities):
@@ -169,11 +174,54 @@ def greedy_route(start_index, cities):
 
 
 if __name__ == '__main__':
+    # Prepare GA without live plotting
     cities = read_cities(64)
-    genetic_algorithm = GeneticAlgorithm(cities=cities, iterations=1200, population_size=100,
-                                         elites_num=20, mutation_rate=0.008, greedy_seed=1,
-                                         roulette_selection=True, plot_progress=True)
-    genetic_algorithm.run()
-    print(genetic_algorithm.best_distance())
-    genetic_algorithm.plot()
-    plt.show(block=True)
+    ga = GeneticAlgorithm(
+        cities=cities,
+        iterations=1200,
+        population_size=100,
+        elites_num=20,
+        mutation_rate=0.008,
+        greedy_seed=1,
+        roulette_selection=True,
+        plot_progress=False
+    )
+
+    # Set up figure and axes
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig.suptitle('Genetic Algorithm Progress')
+
+    # Animation function: advance GA one generation, then redraw both subplots
+    def animate(frame):
+        ga.next_generation()
+        ga.progress.append(ga.best_distance())
+
+        # Left: distance vs. generation
+        ax1.clear()
+        ax1.plot(ga.progress, 'g-')
+        ax1.set_title('Distance per Generation')
+        ax1.set_xlabel('Generation')
+        ax1.set_ylabel('Distance')
+
+        # Right: best TSP route
+        route = ga.best_chromosome()
+        xs = [c.x for c in route] + [route[0].x]
+        ys = [c.y for c in route] + [route[0].y]
+        ax2.clear()
+        ax2.plot(xs, ys, 'g-')
+        ax2.plot(xs, ys, 'ro')
+        ax2.set_title('TSP Route')
+
+        return ax1, ax2
+
+    # Build and save animation using FFMpeg
+    anim = FuncAnimation(fig, animate, frames=ga.iterations, blit=False)
+    writer = FFMpegWriter(fps=10, metadata={'artist': 'Kshitij'}, bitrate=1800)
+    # Save with a simple progress indicator, then close the figure
+    anim.save(
+        'ga_tsp_evolution.mp4',
+        writer=writer,
+        progress_callback=lambda i, n: print(f"Rendering frame {i+1}/{n}", end='\r')
+    )
+    print("\nSaved animation to ga_tsp_evolution.mp4")
+    plt.close(fig)
